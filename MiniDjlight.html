@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web DJ — Vinyl Scratch & Rotating Decks</title>
+    <style>
+        body {
+            margin: 0;
+            background: #0a0a0a;
+            color: #0f8;
+            font-family: Arial, Helvetica, sans-serif;
+            user-select: none;
+            touch-action: none;
+            overflow: hidden;
+        }
+        .app {
+            display: flex;
+            flex-wrap: wrap;
+            height: 100vh;
+            padding: 8px;
+            box-sizing: border-box;
+            gap: 8px;
+            background: radial-gradient(circle at center, #111 0%, #000 80%);
+        }
+        .deck {
+            flex: 1 1 380px;
+            max-width: 380px;
+            padding: 12px;
+            border-radius: 10px;
+            border: 2px solid #022;
+            background: linear-gradient(#1a1a1a, #0f0f0f);
+            box-shadow: 0 0 16px rgba(0,255,136,0.06);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            transition: all 0.2s;
+        }
+        .deck.active {
+            border-color: #0f8;
+            box-shadow: 0 0 24px rgba(0,255,136,0.25);
+        }
+        .mixer {
+            flex: 1 1 100%;
+            background: #111;
+            border-radius: 10px;
+            padding: 12px;
+            border: 1px solid #022;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        h3 {
+            margin: 0 0 6px 0;
+            text-align: center;
+            font-size: 1.2em;
+            color: #0f8;
+            text-shadow: 0 0 5px #0f8;
+        }
+        canvas {
+            background: #000;
+            width: 100%;
+            border-radius: 6px;
+            touch-action: none;
+        }
+        canvas.waveform {
+            height: 60px;
+        }
+        canvas.record {
+            aspect-ratio: 1 / 1;
+            max-width: 240px;
+            align-self: center;
+            cursor: grab;
+            background: #0b0b0b;
+            border: 1px solid #333;
+            border-radius: 50%;
+            box-shadow: inset 0 3px 10px rgba(0,0,0,0.9), 0 0 16px rgba(0,0,0,0.6);
+        }
+        canvas.record:active {
+            cursor: grabbing;
+        }
+        button {
+            background: #111;
+            color: #0f8;
+            border: 1px solid #0f8;
+            padding: 8px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            min-width: 48px;
+            transition: all 0.12s;
+        }
+        button:hover {
+            background: #0f8;
+            color: #000;
+        }
+        button.active {
+            background: #0f8;
+            color: #000;
+            box-shadow: 0 0 12px #0f8;
+        }
+        .nudge {
+            padding: 7px 10px;
+            font-size: 0.88em;
+        }
+        input[type="range"] {
+            width: 100%;
+            accent-color: #0f8;
+        }
+        input[type="number"] {
+            width: 70px;
+            background: #111;
+            color: #0f8;
+            border: 1px solid #0f8;
+            border-radius: 5px;
+            text-align: center;
+            padding: 4px;
+        }
+        .seek {
+            height: 8px;
+            border-radius: 4px;
+        }
+        .status {
+            display: flex;
+            justify-content: space-between;
+            font-size: 1em;
+            font-weight: bold;
+            align-items: center;
+        }
+        .vu {
+            height: 12px;
+            background: #022;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .vu span {
+            display: block;
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(to right, #0f8, #ff0, #f44);
+            transition: width 0.08s linear;
+            box-shadow: inset 0 0 6px rgba(255,255,255,0.4);
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: center;
+        }
+        .pitch-area {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            justify-content: center;
+            font-size: 0.95em;
+        }
+        .file-input {
+            text-align: center;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+
+<div class="app">
+    <div class="deck" id="deckA">
+        <h3>DECK A</h3>
+        <div class="file-input">
+            <input type="file" accept="audio/*">
+        </div>
+        <div class="status">
+            <div>BPM: <input type="number" class="bpm" min="40" max="220" step="0.1" value="128"> Eff: <span class="eff-bpm">128.0</span></div>
+            <div><span class="time">00:00</span> / <span class="duration">--:--</span></div>
+        </div>
+        <canvas class="record"></canvas>
+        <canvas class="waveform"></canvas>
+        <input type="range" min="0" max="100" step="0.01" class="seek" value="0">
+        <div class="controls">
+            <button class="play">PLAY</button>
+            <button class="stop">STOP</button>
+            <button class="sync">SYNC</button>
+        </div>
+        <div class="controls">
+            <button class="nudge" data-nudge="4">+4%</button>
+            <button class="nudge" data-nudge="-4">-4%</button>
+            <button class="nudge" data-nudge="8">+8%</button>
+            <button class="nudge" data-nudge="-8">-8%</button>
+        </div>
+        <div class="pitch-area">
+            <label>Pitch: <span class="pitch-val">0.0</span>%</label>
+            <input type="range" min="-100" max="100" step="0.1" class="pitch" value="0">
+        </div>
+        <div class="vu"><span></span></div>
+    </div>
+
+    <div class="deck" id="deckB">
+        <h3>DECK B</h3>
+        <div class="file-input">
+            <input type="file" accept="audio/*">
+        </div>
+        <div class="status">
+            <div>BPM: <input type="number" class="bpm" min="40" max="220" step="0.1" value="128"> Eff: <span class="eff-bpm">128.0</span></div>
+            <div><span class="time">00:00</span> / <span class="duration">--:--</span></div>
+        </div>
+        <canvas class="record"></canvas>
+        <canvas class="waveform"></canvas>
+        <input type="range" min="0" max="100" step="0.01" class="seek" value="0">
+        <div class="controls">
+            <button class="play">PLAY</button>
+            <button class="stop">STOP</button>
+            <button class="sync">SYNC</button>
+        </div>
+        <div class="controls">
+            <button class="nudge" data-nudge="4">+4%</button>
+            <button class="nudge" data-nudge="-4">-4%</button>
+            <button class="nudge" data-nudge="8">+8%</button>
+            <button class="nudge" data-nudge="-8">-8%</button>
+        </div>
+        <div class="pitch-area">
+            <label>Pitch: <span class="pitch-val">0.0</span>%</label>
+            <input type="range" min="-100" max="100" step="0.1" class="pitch" value="0">
+        </div>
+        <div class="vu"><span></span></div>
+    </div>
+</div>
+
+<div class="mixer">
+    <h3>MIXER</h3>
+    <label>Crossfader</label>
+    <input type="range" min="0" max="1" step="0.001" value="0.5" id="cross">
+    <label>Master Volume</label>
+    <input type="range" min="0" max="1" step="0.001" value="0.92" id="master-vol">
+</div>
+
+<script>
+let ctx, masterGain;
+let deckA, deckB;
+
+document.body.addEventListener("click", initAudioContext, { once: true });
+
+function initAudioContext() {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = ctx.createGain();
+    masterGain.gain.value = 0.92;
+    masterGain.connect(ctx.destination);
+
+    deckA = new Deck(document.getElementById("deckA"));
+    deckB = new Deck(document.getElementById("deckB"));
+
+    const cross = document.getElementById('cross');
+    cross.addEventListener('input', e => {
+        const val = parseFloat(e.target.value);
+        deckA.gain.gain.value = Math.cos(val * Math.PI / 2);
+        deckB.gain.gain.value = Math.sin(val * Math.PI / 2);
+    });
+    cross.dispatchEvent(new Event('input'));
+
+    document.getElementById('master-vol').addEventListener('input', e => {
+        masterGain.gain.value = parseFloat(e.target.value);
+    });
+
+    window.addEventListener('resize', () => {
+        deckA.resize();
+        deckB.resize();
+    });
+
+    requestAnimationFrame(updateUI);
+}
+
+class Deck {
+    constructor(el) {
+        this.el = el;
+        this.buffer = null;
+        this.source = null;
+        this.playing = false;
+        this.startTime = 0;
+        this.offset = 0;
+        this.baseRate = 1.0;
+        this.scratchRate = 1.0;
+        this.isScratching = false;
+        this.lastPointerX = 0;
+        this.lastPointerTime = 0;
+        this.rotationAngle = 0;
+        this.lastUpdateTime = performance.now();
+        this.waveformImage = null;
+
+        this.gain = ctx.createGain();
+        this.gain.connect(masterGain);
+
+        this.analyser = ctx.createAnalyser();
+        this.analyser.fftSize = 1024;
+        this.analyserData = new Float32Array(this.analyser.fftSize);
+        this.analyser.connect(this.gain);
+
+        this.seekBar    = el.querySelector('.seek');
+        this.pitchSlider = el.querySelector('.pitch');
+        this.pitchValEl  = el.querySelector('.pitch-val');
+        this.timeEl      = el.querySelector('.time');
+        this.durationEl  = el.querySelector('.duration');
+        this.bpmInput    = el.querySelector('.bpm');
+        this.effBpmEl    = el.querySelector('.eff-bpm');
+        this.canvas      = el.querySelector('.waveform');
+        this.recordCanvas = el.querySelector('.record');
+        this.vuBar       = el.querySelector('.vu span');
+
+        this.ctx2d = this.canvas.getContext('2d');
+        this.recordCtx = this.recordCanvas.getContext('2d');
+
+        this.resize();
+
+        el.querySelector('.play').onclick = () => this.togglePlay();
+        el.querySelector('.stop').onclick = () => this.stop();
+        el.querySelector('.sync').onclick = () => this.syncWithOther();
+        this.pitchSlider.oninput = e => this.setBasePitch(e.target.value);
+
+        this.seekBar.oninput = e => this.onSeekInput(e.target.value);
+        this.canvas.onclick = e => this.onCanvasClick(e);
+
+        this.recordCanvas.onpointerdown = e => this.onScratchStart(e);
+        this.recordCanvas.onpointermove = e => this.onScratchMove(e);
+        this.recordCanvas.onpointerup = 
+        this.recordCanvas.onpointercancel = 
+        this.recordCanvas.onpointerleave = e => this.onScratchEnd(e);
+
+        el.querySelector('input[type="file"]').onchange = e => this.loadFile(e);
+
+        el.querySelectorAll('.nudge').forEach(btn => {
+            btn.onpointerdown = () => this.startNudge(parseFloat(btn.dataset.nudge));
+            btn.onpointerup = btn.onpointercancel = btn.onpointerleave = () => this.stopNudge();
+        });
+    }
+
+    resize() {
+        const dpr = window.devicePixelRatio || 1;
+        const cw = this.canvas.clientWidth;
+        const ch = this.canvas.clientHeight;
+        this.canvas.width = cw * dpr;
+        this.canvas.height = ch * dpr;
+        this.ctx2d.scale(dpr, dpr);
+
+        const rw = this.recordCanvas.clientWidth;
+        const rh = this.recordCanvas.clientHeight;
+        this.recordCanvas.width = rw * dpr;
+        this.recordCanvas.height = rh * dpr;
+        this.recordCtx.scale(dpr, dpr);
+
+        if (this.waveformImage) {
+            this.ctx2d.drawImage(this.waveformImage, 0, 0, cw, ch);
+        } else if (this.buffer) {
+            this.drawWaveform();
+        }
+    }
+
+    async loadFile(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            this.buffer = await ctx.decodeAudioData(arrayBuffer);
+
+            this.durationEl.textContent = this.formatTime(this.buffer.duration);
+            this.seekBar.max = 100;
+            this.drawWaveform();
+            this.waveformImage = document.createElement('canvas');
+            this.waveformImage.width = this.canvas.width;
+            this.waveformImage.height = this.canvas.height;
+            this.waveformImage.getContext('2d').drawImage(this.canvas, 0, 0);
+
+            await this.detectBPM();
+        } catch (err) {
+            console.error("Audio decoding failed:", err);
+            alert("Could not load this audio file.");
+        }
+    }
+
+    async getLowpassBuffer(buffer) {
+        const sampleRate = buffer.sampleRate;
+        const length = Math.min(buffer.length, 30 * sampleRate);
+        const offline = new OfflineAudioContext(1, length, sampleRate);
+        const source = offline.createBufferSource();
+        source.buffer = buffer;
+        const filter = offline.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 150;
+        filter.Q.value = 1.0;
+        source.connect(filter);
+        filter.connect(offline.destination);
+        source.start(0);
+        const rendered = await offline.startRendering();
+        return rendered;
+    }
+
+    getPeaksAtThreshold(data, threshold) {
+        const peaksArray = [];
+        const length = data.length;
+        for (let i = 0; i < length;) {
+            if (data[i] > threshold) {
+                peaksArray.push(i);
+                i += 10000;
+            } else {
+                i++;
+            }
+        }
+        return peaksArray;
+    }
+
+    countIntervalsBetweenNearbyPeaks(peaks) {
+        const intervalCounts = [];
+        const sampleRate = this.buffer.sampleRate;
+        const tolerance = sampleRate / 220;
+        peaks.forEach((peak, index) => {
+            for (let i = 0; i < 10; i++) {
+                const next = peaks[index + i];
+                if (next === undefined) break;
+                const interval = next - peak;
+                const foundInterval = intervalCounts.some(ic => {
+                    if (Math.abs(ic.interval - interval) < tolerance) {
+                        ic.count++;
+                        return true;
+                    }
+                });
+                if (!foundInterval) {
+                    intervalCounts.push({ interval, count: 1 });
+                }
+            }
+        });
+        return intervalCounts;
+    }
+
+    groupNeighborsByTempo(intervalCounts, sampleRate) {
+        const tempoCounts = [];
+        intervalCounts.forEach(ic => {
+            if (ic.interval > 0) {
+                let theoTempo = 60 / (ic.interval / sampleRate);
+                while (theoTempo > 240) theoTempo /= 2;
+                while (theoTempo < 60) theoTempo *= 2;
+                theoTempo = Math.round(theoTempo);
+                const found = tempoCounts.some(tc => {
+                    if (tc.tempo === theoTempo) {
+                        tc.count += ic.count;
+                        return true;
+                    }
+                });
+                if (!found) {
+                    tempoCounts.push({ tempo: theoTempo, count: ic.count });
+                }
+            }
+        });
+        return tempoCounts;
+    }
+
+    async detectBPM() {
+        if (!this.buffer) return;
+        const filtered = await this.getLowpassBuffer(this.buffer);
+        const data = filtered.getChannelData(0);
+        let max = -Infinity, min = Infinity;
+        for (let i = 0; i < data.length; i++) {
+            const v = data[i];
+            if (v > max) max = v;
+            if (v < min) min = v;
+        }
+        let threshold = min + (max - min) * 0.98;
+        let peaks = this.getPeaksAtThreshold(data, threshold);
+        const maxAttempts = 20;
+        let attempts = 0;
+        while (peaks.length < 10 && attempts < maxAttempts && threshold > min) {
+            threshold -= (max - min) * 0.05;
+            peaks = this.getPeaksAtThreshold(data, threshold);
+            attempts++;
+        }
+        if (peaks.length < 2) {
+            console.warn('Could not detect enough peaks for BPM');
+            return 128;
+        }
+        const intervalCounts = this.countIntervalsBetweenNearbyPeaks(peaks);
+        const tempoCounts = this.groupNeighborsByTempo(intervalCounts, filtered.sampleRate);
+        tempoCounts.sort((a, b) => b.count - a.count);
+        const bpm = tempoCounts[0]?.tempo || 128;
+        this.bpmInput.value = bpm;
+        this.effBpmEl.textContent = bpm.toFixed(1);
+        return bpm;
+    }
+
+    get effectiveRate() {
+        return this.baseRate * this.scratchRate;
+    }
+
+    togglePlay() {
+        if (this.playing) this.stop();
+        else this.play();
+    }
+
+    play() {
+        if (!this.buffer || this.playing) return;
+        ctx.resume();
+
+        this.source = ctx.createBufferSource();
+        this.source.buffer = this.buffer;
+        this.source.playbackRate.value = this.effectiveRate;
+        this.source.connect(this.analyser);
+
+        this.source.onended = () => {
+            this.playing = false;
+            this.offset = this.buffer.duration;
+            this.el.querySelector('.play').classList.remove('active');
+            this.el.classList.remove('active');
+            this.scratchRate = 1.0;
+        };
+
+        const when = ctx.currentTime;
+        this.source.start(when, this.offset);
+        this.startTime = when;
+        this.playing = true;
+
+        this.el.querySelector('.play').classList.add('active');
+        this.el.classList.add('active');
+    }
+
+    stop() {
+        if (this.source) {
+            this.source.onended = null;
+            this.source.stop();
+            this.source = null;
+        }
+        this.offset = this.getCurrentTime();
+        this.playing = false;
+        this.scratchRate = 1.0;
+        this.el.querySelector('.play').classList.remove('active');
+        this.el.classList.remove('active');
+    }
+
+    updatePlaybackRate(newRate) {
+        if (this.source) {
+            const now = ctx.currentTime;
+            this.offset += (now - this.startTime) * this.source.playbackRate.value;
+            this.startTime = now;
+            this.source.playbackRate.value = newRate;
+        }
+    }
+
+    setBasePitch(percent) {
+        percent = parseFloat(percent);
+        this.baseRate = Math.max(0.1, 1 + percent / 100);
+        this.pitchValEl.textContent = percent.toFixed(1);
+        this.updatePlaybackRate(this.effectiveRate);
+    }
+
+    startNudge(percent) {
+        this.scratchRate = 1 + percent / 100;
+        this.updatePlaybackRate(this.effectiveRate);
+    }
+
+    stopNudge() {
+        this.scratchRate = 1.0;
+        this.updatePlaybackRate(this.effectiveRate);
+    }
+
+    syncWithOther() {
+        const other = (this === deckA) ? deckB : deckA;
+        if (!other.buffer || !this.buffer) return;
+
+        // Match tempo
+        const otherBaseBpm = parseFloat(other.bpmInput.value) || 128;
+        const otherEffectiveBpm = otherBaseBpm * other.baseRate;
+        const thisBaseBpm = parseFloat(this.bpmInput.value) || 128;
+        const targetRate = otherEffectiveBpm / thisBaseBpm;
+        const percent = (targetRate - 1) * 100;
+        this.pitchSlider.value = percent;
+        this.setBasePitch(percent);
+
+        // Phase / beat alignment
+        const beatDuration = 60 / otherEffectiveBpm;
+        const otherPos = other.getCurrentTime();
+        this.offset = Math.round(otherPos / beatDuration) * beatDuration;
+
+        if (this.playing) {
+            this.stop();
+            this.play();
+        } else if (other.playing) {
+            this.play();
+        }
+    }
+
+    getCurrentTime() {
+        if (!this.buffer) return 0;
+        let t = this.offset;
+        if (this.playing) {
+            t += (ctx.currentTime - this.startTime) * this.effectiveRate;
+        }
+        return Math.max(0, Math.min(this.buffer.duration, t));
+    }
+
+    onSeekInput(percentStr) {
+        if (!this.buffer) return;
+        const percent = parseFloat(percentStr);
+        const t = (percent / 100) * this.buffer.duration;
+        this.offset = Math.max(0, Math.min(t, this.buffer.duration));
+
+        if (this.playing) {
+            this.stop();
+            this.play();
+        }
+    }
+
+    onCanvasClick(e) {
+        if (!this.buffer) return;
+        const rect = this.canvas.getBoundingClientRect();
+        const frac = (e.clientX - rect.left) / rect.width;
+        const t = frac * this.buffer.duration;
+        this.offset = Math.max(0, Math.min(t, this.buffer.duration));
+
+        if (this.playing) {
+            this.stop();
+            this.play();
+        }
+    }
+
+    onScratchStart(e) {
+        if (!this.buffer) return;
+        e.preventDefault();
+        this.recordCanvas.setPointerCapture(e.pointerId);
+        this.isScratching = true;
+        this.lastPointerX = e.clientX;
+        this.lastPointerTime = performance.now();
+        if (this.playing) this.stop(); // pause normal playback during scratch
+    }
+
+    onScratchMove(e) {
+        if (!this.isScratching || !this.buffer) return;
+        e.preventDefault();
+
+        const now = performance.now();
+        const dt = now - this.lastPointerTime;
+        if (dt < 16) return; // throttle
+
+        const dx = e.clientX - this.lastPointerX;
+        const rate = dx / dt * 3.0; // sensitivity
+        this.scratchRate = Math.max(-5, Math.min(5, rate));
+
+        let pos = this.getCurrentTime();
+        pos = Math.max(0, Math.min(pos, this.buffer.duration));
+
+        if (this.source) this.source.stop();
+        this.source = ctx.createBufferSource();
+        this.source.buffer = this.buffer;
+        this.source.playbackRate.value = this.effectiveRate;
+        this.source.connect(this.analyser);
+        this.source.start(0, pos);
+        this.startTime = ctx.currentTime;
+        this.offset = pos;
+
+        this.lastPointerX = e.clientX;
+        this.lastPointerTime = now;
+    }
+
+    onScratchEnd(e) {
+        if (!this.isScratching) return;
+        e.preventDefault();
+        this.isScratching = false;
+
+        if (this.source) this.source.stop();
+        this.scratchRate = 1.0;
+
+        const pos = this.getCurrentTime();
+        this.offset = Math.max(0, Math.min(pos, this.buffer ? this.buffer.duration : 0));
+
+        // Resume normal playback if was playing before scratch
+        this.play();
+    }
+
+    drawWaveform() {
+        if (!this.buffer) return;
+
+        const data = this.buffer.getChannelData(0);
+        const w = this.canvas.clientWidth;
+        const h = this.canvas.clientHeight;
+        const step = Math.max(1, Math.floor(data.length / w));
+
+        this.ctx2d.clearRect(0, 0, w, h);
+
+        for (let i = 0; i < w; i++) {
+            let min = 1, max = -1;
+            for (let j = 0; j < step; j++) {
+                const idx = i * step + j;
+                if (idx >= data.length) break;
+                const v = data[idx];
+                min = Math.min(min, v);
+                max = Math.max(max, v);
+            }
+            const y = (1 + min) * h / 2;
+            const height = (max - min) * h / 2;
+            this.ctx2d.fillStyle = "#0a4";
+            this.ctx2d.fillRect(i, y - height/2, 1, height);
+        }
+
+        // Save static waveform
+        this.waveformImage = document.createElement('canvas');
+        this.waveformImage.width = this.canvas.width;
+        this.waveformImage.height = this.canvas.height;
+        this.waveformImage.getContext('2d').drawImage(this.canvas, 0, 0);
+    }
+
+    drawRecord() {
+        const w = this.recordCanvas.clientWidth;
+        const h = this.recordCanvas.clientHeight;
+        const cx = w / 2;
+        const cy = h / 2;
+        const r = Math.min(cx, cy) * 0.92;
+
+        this.recordCtx.clearRect(0, 0, w, h);
+        this.recordCtx.save();
+        this.recordCtx.translate(cx, cy);
+        this.recordCtx.rotate(this.rotationAngle);
+
+        this.recordCtx.beginPath();
+        this.recordCtx.arc(0, 0, r, 0, Math.PI * 2);
+        this.recordCtx.fillStyle = '#222';
+        this.recordCtx.fill();
+
+        this.recordCtx.strokeStyle = '#444';
+        this.recordCtx.lineWidth = 6;
+        this.recordCtx.stroke();
+
+        for (let i = 1; i <= 10; i++) {
+            this.recordCtx.beginPath();
+            this.recordCtx.arc(0, 0, r * (1 - i * 0.038), 0, Math.PI * 2);
+            this.recordCtx.strokeStyle = '#2a2a2a';
+            this.recordCtx.lineWidth = 1;
+            this.recordCtx.stroke();
+        }
+
+        this.recordCtx.beginPath();
+        this.recordCtx.arc(0, 0, r * 0.32, 0, Math.PI * 2);
+        this.recordCtx.fillStyle = '#001133';
+        this.recordCtx.fill();
+
+        this.recordCtx.strokeStyle = '#3366ff';
+        this.recordCtx.lineWidth = 3;
+        this.recordCtx.stroke();
+
+        this.recordCtx.font = 'bold 14px Arial';
+        this.recordCtx.fillStyle = '#88ccff';
+        this.recordCtx.textAlign = 'center';
+        this.recordCtx.fillText('xAI', 0, 6);
+
+        this.recordCtx.beginPath();
+        this.recordCtx.arc(0, 0, r * 0.06, 0, Math.PI * 2);
+        this.recordCtx.fillStyle = '#000';
+        this.recordCtx.fill();
+
+        this.recordCtx.restore();
+    }
+
+    updateVU() {
+        if (!this.playing && !this.isScratching) {
+            this.vuBar.style.width = '0%';
+            return;
+        }
+        this.analyser.getFloatTimeDomainData(this.analyserData);
+        let sum = 0;
+        for (let v of this.analyserData) sum += v * v;
+        const rms = Math.sqrt(sum / this.analyserData.length);
+        const db = 20 * Math.log10(rms + 1e-8);
+        const level = Math.max(0, Math.min(1, (db + 60) / 60)); // -60 dB → 0 dB range
+        this.vuBar.style.width = (level * 100) + '%';
+    }
+
+    formatTime(sec) {
+        if (isNaN(sec) || sec < 0) return "--:--";
+        const m = Math.floor(sec / 60);
+        const s = Math.floor(sec % 60);
+        return `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+    }
+
+    updateUI() {
+        const now = performance.now();
+        const delta = (now - this.lastUpdateTime) / 1000;
+        this.lastUpdateTime = now;
+
+        if (this.playing || this.isScratching) {
+            const direction = this.effectiveRate >= 0 ? 1 : -1;
+            this.rotationAngle += delta * Math.abs(this.effectiveRate) * Math.PI * 2 * (33.333 / 60) * direction;
+            this.rotationAngle %= Math.PI * 2;
+        }
+
+        const t = this.getCurrentTime();
+        this.timeEl.textContent = this.formatTime(t);
+
+        if (this.buffer && this.waveformImage) {
+            const cw = this.canvas.clientWidth;
+            const ch = this.canvas.clientHeight;
+            this.ctx2d.drawImage(this.waveformImage, 0, 0, cw, ch);
+
+            const progress = t / this.buffer.duration;
+            if (!isNaN(progress) && progress >= 0 && progress <= 1) {
+                const x = progress * cw;
+                this.ctx2d.fillStyle = this.isScratching ? "#ffaa44" : "#ff4040";
+                this.ctx2d.fillRect(x - 3, 0, 6, ch);
+            }
+
+            const pct = progress * 100;
+            if (!this.seekBar.matches(':active') && !this.isScratching) {
+                this.seekBar.value = Math.max(0, Math.min(100, pct));
+            }
+        }
+
+        const baseBpm = parseFloat(this.bpmInput.value) || 128;
+        const effBpm = (baseBpm * this.baseRate).toFixed(1);
+        this.effBpmEl.textContent = effBpm;
+
+        this.drawRecord();
+        this.updateVU();
+    }
+}
+
+function updateUI() {
+    deckA?.updateUI();
+    deckB?.updateUI();
+    requestAnimationFrame(updateUI);
+}
+</script>
+</body>
+</html>
